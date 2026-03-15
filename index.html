@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TikTok 爆款内容引擎</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React 18（jsdelivr 国内有节点） -->
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <!-- Babel 7 for JSX（jsdelivr 国内有节点） -->
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.6/babel.min.js"></script>
+  <style>
+    /* 自定义样式 */
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 5px rgba(99, 102, 241, 0.3); }
+      50% { box-shadow: 0 0 20px rgba(99, 102, 241, 0.6); }
+    }
+    .pulse-glow { animation: pulse-glow 2s infinite; }
+    .gradient-bg {
+      background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 50%, #0f0f23 100%);
+    }
+    .card-hover:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+    }
+    .card-hover { transition: all 0.2s ease; }
+    /* TikTok 竖屏预览 */
+    .phone-frame {
+      width: 270px; height: 480px;
+      border-radius: 24px;
+      border: 3px solid #333;
+      overflow: hidden;
+      position: relative;
+    }
+  </style>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'tt-pink': '#FE2C55',
+            'tt-cyan': '#25F4EE',
+            'tt-dark': '#0f0f23',
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="gradient-bg min-h-screen text-white">
+<div id="root"></div>
+
+<script type="text/babel">
+// ========================================================
+// TikTok 爆款内容引擎 — 完整单文件应用
+// ========================================================
+
+const { useState, useEffect, useRef, useCallback } = React;
+
+// --------------------------------------------------------
+// 配置：可插拔的服务选择
+// --------------------------------------------------------
+const DEFAULT_CONFIG = {
+  data: "apify",         // 数据源
+  transcription: "groq", // 转录服务: groq | none
+  llm: "deepseek",       // AI 分析: deepseek
+  video: "a2e",          // 视频生成: a2e | preview
+};
+
+// --------------------------------------------------------
+// Mock 数据：演示模式用的假数据
+// --------------------------------------------------------
+const MOCK_VIDEOS = [
+  {
+    id: "mock_1",
+    desc: "选眼镜不要只看好不好看！#眼镜 #配镜攻略 #近视",
+    plays: 2850000,
+    likes: 186000,
+    comments: 4200,
+    shares: 12300,
+    author: "眼镜哥_Tony",
+    coverUrl: "",
+    videoUrl: "",
+    transcript: "很多人选眼镜只看好不好看，但你知道吗？镜片的折射率才是最重要的。如果你近视超过400度，一定要选1.67以上的折射率，不然镜片会很厚，戴着像啤酒瓶底。今天我教你三步选到最适合自己的眼镜。第一步，先去医院做验光，不要在眼镜店验，准确度差很多。第二步，根据你的度数选择合适的折射率。第三步，镜框要根据脸型来选，圆脸选方框，方脸选圆框。关注我，下期教你怎么用医保买眼镜，能省一大半的钱！"
+  },
+  {
+    id: "mock_2",
+    desc: "800度近视花80块配到好眼镜的秘密 #眼镜 #省钱攻略",
+    plays: 1920000,
+    likes: 142000,
+    comments: 8900,
+    shares: 25600,
+    author: "省钱小能手",
+    coverUrl: "",
+    videoUrl: "",
+    transcript: "我800度近视，上次配眼镜只花了80块！你没听错，80块！秘密就是线上配镜。很多人不知道，眼镜店的镜片加价率高达10到20倍。我现在教你怎么做。首先，去公立医院眼科验光，挂号费才几十块，但验光结果最准确。然后拿着验光单，去某宝搜镜片品牌的官方店，选好折射率下单。镜框呢？去1688上买，同款眼镜店要卖三四百的框，这里几十块搞定。我这副800度的眼镜，镜片45，镜框35，加起来80！赶紧收藏，别等要配的时候找不到了！"
+  },
+  {
+    id: "mock_3",
+    desc: "千万别去眼镜店验光！#近视 #验光 #眼镜避坑",
+    plays: 5200000,
+    likes: 328000,
+    comments: 15600,
+    shares: 42000,
+    author: "眼科医生小林",
+    coverUrl: "",
+    videoUrl: "",
+    transcript: "千万别去眼镜店验光！我是眼科医生，今天告诉你一个行业内幕。眼镜店的验光师，很多根本没有专业资质，用的设备也是最基础的电脑验光仪，误差非常大。特别是青少年，必须要做散瞳验光才能得到准确度数，但眼镜店根本不会给你做，因为散瞳后瞳孔放大，当天没法试戴眼镜，他就没法让你当场掏钱了。正确的做法是：先去公立医院眼科挂号，做一个完整的验光检查，包括散瞳、眼轴长度、角膜曲率，全套下来也就一百多块。拿到准确的验光单，再去配眼镜，线上线下都行。这一条能帮你省至少一千块，还能保护你的眼睛。"
+  },
+  {
+    id: "mock_4",
+    desc: "你的脸型适合什么眼镜？#眼镜搭配 #脸型分析",
+    plays: 3100000,
+    likes: 205000,
+    comments: 6700,
+    shares: 18900,
+    author: "搭配师Coco",
+    coverUrl: "",
+    videoUrl: "",
+    transcript: "选眼镜选到崩溃？那是因为你不知道自己的脸型适合什么框！记住这个万能公式：脸型和镜框要互补。圆脸的姐妹，选有棱角的方框或者多边形框，能修饰脸部线条。方脸呢，就要选圆润的框，椭圆形或者猫眼框都很好看。长脸选大框，能让脸看起来更短，千万别选小细框。瓜子脸的人就随便选了，什么都好看，我酸了。还有一个小技巧：镜框的宽度要和脸的宽度差不多，太宽显脸小但不自然，太窄就会把脸挤出来。记住了吗？截图保存，下次配眼镜的时候拿出来对照！"
+  },
+  {
+    id: "mock_5",
+    desc: "防蓝光眼镜是智商税吗？眼科医生告诉你真相 #防蓝光 #智商税",
+    plays: 4500000,
+    likes: 275000,
+    comments: 22000,
+    shares: 35000,
+    author: "眼科医生小林",
+    coverUrl: "",
+    videoUrl: "",
+    transcript: "防蓝光眼镜是不是智商税？作为一个眼科医生我可以很负责地告诉你：大部分情况下，是的。首先，手机和电脑发出的蓝光量其实很小，远远达不到伤害眼睛的程度。真正让你眼睛累的不是蓝光，而是你一直盯着屏幕不眨眼，导致眼睛干涩。其次，防蓝光镜片会让画面偏黄，影响色彩准确度，如果你是做设计的，戴防蓝光反而有害。唯一推荐用防蓝光的场景是：晚上睡前刷手机。因为蓝光会抑制褪黑素分泌，影响睡眠。但最好的办法是开手机自带的护眼模式，免费的！省下的两三百块去吃顿好的不香吗？"
+  },
+];
+
+// 模拟的分析报告（演示模式用）
+const MOCK_ANALYSIS = {
+  hookTypes: [
+    { type: "反常识开场", percentage: 60, example: "千万别去眼镜店验光！" },
+    { type: "省钱诱惑", percentage: 25, example: "800度近视花80块配到好眼镜" },
+    { type: "提问式开场", percentage: 15, example: "防蓝光眼镜是智商税吗？" },
+  ],
+  contentStructure: {
+    avgDuration: "45-60秒",
+    pattern: "Hook(3秒) → 痛点共鸣(5秒) → 专业内容(30秒) → CTA(5秒)",
+    keyElements: ["专业身份背书", "具体数字佐证", "省钱/避坑角度", "分步骤教学"],
+  },
+  emotionalTriggers: ["恐惧（行业内幕、被坑）", "贪婪（省钱攻略）", "好奇（反常识观点）"],
+  targetAudience: "18-35岁近视人群，关注性价比和实用攻略",
+  commonHashtags: ["#眼镜", "#配镜攻略", "#近视", "#省钱", "#避坑"],
+  bestPostingTime: "晚上 8-10 点（下班后刷手机高峰期）",
+  viralFactors: [
+    "医生/专业人士身份增加可信度",
+    "具体金额对比制造冲击感（80块 vs 眼镜店上千）",
+    "分步骤教程让人想收藏",
+    "评论区争论推高互动率",
+  ],
+};
+
+// 模拟的生成脚本（演示模式用）
+const MOCK_SCRIPTS = [
+  {
+    id: 1,
+    title: "省钱攻略型",
+    hook: "我200度近视，配眼镜只花了50块，眼镜店老板看了想打我",
+    body: "你们是不是每次配眼镜都要花好几百甚至上千？其实你多花的钱，90%都是眼镜店的利润。今天教你一个正规省钱方法，三步搞定。第一步，去公立医院验光，别去眼镜店，原因我之前视频讲过了。第二步，打开某宝搜你要的镜片品牌，比如明月、万新，官方旗舰店价格只有眼镜店的十分之一。第三步，镜框上1688，同款大牌设计框，三四十块钱包邮。",
+    cta: "这个方法我已经用了三年，省了不下五千块。关注我，我还有更多配镜省钱技巧！",
+    style: "对镜头自然说话，语速偏快，表情夸张一点",
+    estimatedDuration: "42秒",
+  },
+  {
+    id: 2,
+    title: "反常识揭秘型",
+    hook: "眼镜行业不想让你知道的三个秘密，第三个最离谱",
+    body: "第一个秘密：你在眼镜店验光，验光师可能会故意把度数配高25到50度，因为换镜片的频率更高，他们赚更多。第二个秘密：标价1000块的镜片，成本可能只有30到50块，加价率是所有消费品里最高的之一。第三个秘密：很多眼镜店推荐的防蓝光、防疲劳这些功能镜片，大部分人根本不需要，就是为了让你多花钱。",
+    cta: "如果你觉得有用，转发给你身边戴眼镜的朋友，别让他们再被坑了！评论区告诉我，你上次配眼镜花了多少钱？",
+    style: "压低声音说，制造『爆料』的氛围感",
+    estimatedDuration: "48秒",
+  },
+  {
+    id: 3,
+    title: "教程实操型",
+    hook: "跟着我做，保证你下次配眼镜省一半的钱",
+    body: "首先打开手机，搜索你所在城市的公立医院眼科，挂一个验光的号，一般50块左右。到了医院，跟医生说要做完整验光，包括电脑验光、综合验光和散瞳。验光单拿到手之后，重点看这几个数据：球镜就是你的近视度数，柱镜是散光度数，轴位是散光方向，瞳距是两个瞳孔之间的距离。然后打开某宝，搜镜片品牌名加官方店，把验光单数据填进去下单就行了。",
+    cta: "整个过程不超过200块，效果和眼镜店配的一模一样！截图保存这个视频，下次配镜的时候用得上！",
+    style: "屏幕录制+真人出镜结合，边操作边讲解",
+    estimatedDuration: "55秒",
+  },
+];
+
+// --------------------------------------------------------
+// 工具函数
+// --------------------------------------------------------
+
+// 格式化数字（1234567 → 123.4万）
+function formatNumber(num) {
+  if (num >= 10000) return (num / 10000).toFixed(1) + '万';
+  return num.toLocaleString();
+}
+
+// 延时函数（用于模拟加载效果）
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// --------------------------------------------------------
+// API 模块：数据获取（通过后端代理调用 Apify）
+// --------------------------------------------------------
+async function fetchTikTokVideos(keyword, onProgress) {
+  onProgress("正在启动爬虫，搜索关键词: " + keyword);
+
+  // 调用我们自己的后端接口，后端会代理 Apify（API Key 安全地存在服务器 .env 里）
+  const response = await fetch("/api/scrape", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ keyword, resultsPerPage: 20 }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: "请求失败" }));
+    throw new Error(err.error || `数据获取失败 (${response.status})`);
+  }
+
+  const items = await response.json();
+
+  // 转换数据格式，按播放量排序（数据清洗逻辑保留在前端）
+  const videos = items
+    .map(item => ({
+      id: item.id || item.videoId || Math.random().toString(36).substr(2, 9),
+      desc: item.text || item.desc || "",
+      plays: item.playCount || item.plays || 0,
+      likes: item.diggCount || item.likes || 0,
+      comments: item.commentCount || item.comments || 0,
+      shares: item.shareCount || item.shares || 0,
+      author: item.authorMeta?.name || item.author || "未知",
+      coverUrl: item.covers?.default || item.coverUrl || "",
+      videoUrl: item.videoUrl || item.videoMeta?.downloadAddr || "",
+      transcript: "", // 后续由转录模块填充
+    }))
+    .sort((a, b) => b.plays - a.plays);
+
+  onProgress(`成功获取 ${videos.length} 个视频`);
+  return videos;
+}
+
+// --------------------------------------------------------
+// API 模块：语音转录（通过后端代理调用 Groq Whisper）
+// --------------------------------------------------------
+async function transcribeVideos(videos, topN, onProgress) {
+  // 只转录播放量最高的 topN 个视频
+  const toTranscribe = videos.slice(0, topN);
+  const results = [...videos]; // 拷贝数组
+
+  for (let i = 0; i < toTranscribe.length; i++) {
+    const video = toTranscribe[i];
+    onProgress(`正在转录第 ${i + 1}/${toTranscribe.length} 个视频...`);
+
+    if (!video.videoUrl) {
+      onProgress(`第 ${i + 1} 个视频没有下载链接，跳过`);
+      continue;
+    }
+
+    try {
+      // 把视频 URL 发给后端，后端负责下载视频并转录（不暴露 API Key）
+      const response = await fetch("/api/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoUrl: video.videoUrl, filename: `video_${i}.mp4` }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: "转录失败" }));
+        throw new Error(err.error || "转录失败");
+      }
+
+      const transcriptData = await response.json();
+
+      // 把转录结果写入对应视频对象
+      const idx = results.findIndex(v => v.id === video.id);
+      if (idx !== -1) {
+        results[idx] = { ...results[idx], transcript: transcriptData.text || "" };
+      }
+
+      onProgress(`视频 ${i + 1} 转录完成 ✓`);
+    } catch (err) {
+      onProgress(`视频 ${i + 1} 转录失败: ${err.message}`);
+      console.error("转录错误:", err);
+    }
+  }
+
+  return results;
+}
+
+// --------------------------------------------------------
+// API 模块：爆款分析（通过后端代理调用 DeepSeek）
+// --------------------------------------------------------
+async function analyzeVideos(videos, onProgress) {
+  onProgress("正在让 AI 分析爆款规律...");
+
+  // 构建视频数据文本，传给 DeepSeek
+  const videoListText = videos.slice(0, 10).map((v, i) => {
+    let entry = `视频${i + 1}：
+- 作者：${v.author}
+- 文案：${v.desc}
+- 播放量：${formatNumber(v.plays)} | 点赞：${formatNumber(v.likes)} | 评论：${formatNumber(v.comments)} | 转发：${formatNumber(v.shares)}`;
+    if (v.transcript) {
+      entry += `\n- 口播内容：${v.transcript}`;
+    }
+    return entry;
+  }).join("\n\n");
+
+  const prompt = `你是一个 TikTok 短视频爆款分析专家。我给你一组同一关键词下的热门视频数据（包含文案和口播转录内容），请分析这些爆款的共同规律。
+
+以下是视频数据：
+${videoListText}
+
+请严格按以下 JSON 格式返回分析结果（不要包含 markdown 代码块标记，直接返回 JSON）：
+{
+  "hookTypes": [
+    {"type": "Hook类型名称", "percentage": 占比数字, "example": "具体例子"}
+  ],
+  "contentStructure": {
+    "avgDuration": "平均时长范围",
+    "pattern": "内容结构模式",
+    "keyElements": ["关键元素1", "关键元素2"]
+  },
+  "emotionalTriggers": ["情绪触发点1", "情绪触发点2"],
+  "targetAudience": "目标受众描述",
+  "commonHashtags": ["#标签1", "#标签2"],
+  "bestPostingTime": "建议发布时间",
+  "viralFactors": ["爆款因素1", "爆款因素2"]
+}
+
+重点分析：
+1. 开头 Hook 是怎么抓住注意力的（如果有口播内容，重点分析口播的前两句话）
+2. 内容是怎么组织的（总分总？步骤式？故事型？）
+3. 用了什么情绪策略（恐惧、好奇、贪婪、共鸣？）
+4. 为什么这些视频能火（数据背后的逻辑）`;
+
+  // 调用后端统一的 /api/chat 接口（后端会加上 API Key 和 model）
+  const response = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messages: [
+        { role: "system", content: "你是短视频爆款分析专家，请直接返回 JSON 格式的分析结果，不要包含 markdown 代码块标记。" },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.7,
+      max_tokens: 2000,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: "请求失败" }));
+    throw new Error(err.error || `分析请求失败 (${response.status})`);
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content || "";
+
+  // 尝试从返回内容中解析 JSON
+  let analysis;
+  try {
+    analysis = JSON.parse(content);
+  } catch (e) {
+    const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (jsonMatch) {
+      analysis = JSON.parse(jsonMatch[1].trim());
+    } else {
+      const start = content.indexOf('{');
+      const end = content.lastIndexOf('}');
+      if (start !== -1 && end !== -1) {
+        analysis = JSON.parse(content.substring(start, end + 1));
+      } else {
+        throw new Error("无法解析 AI 返回的分析结果");
+      }
+    }
+  }
+
+  onProgress("分析完成 ✓");
+  return analysis;
+}
+
+// --------------------------------------------------------
+// API 模块：脚本生成（通过后端代理调用 DeepSeek）
+// --------------------------------------------------------
+async function generateScripts(analysis, keyword, onProgress) {
+  onProgress("正在生成脚本...");
+
+  const prompt = `你是一个 TikTok 短视频脚本写手。基于以下爆款分析结果，为关键词"${keyword}"生成 3 条不同风格的短视频脚本。
+
+爆款分析结果：
+${JSON.stringify(analysis, null, 2)}
+
+请为每条脚本选择不同的 Hook 类型和内容风格。每条脚本必须包含：
+1. Hook（前3秒的开场白，要能立刻抓住注意力）
+2. Body（正文，30-45秒的核心内容）
+3. CTA（结尾行动号召，引导关注/收藏/评论）
+
+请严格按以下 JSON 格式返回（不要包含 markdown 代码块标记，直接返回 JSON）：
+[
+  {
+    "id": 1,
+    "title": "脚本风格名称",
+    "hook": "开场白原文",
+    "body": "正文内容原文",
+    "cta": "结尾行动号召原文",
+    "style": "表演提示（语气、表情、节奏建议）",
+    "estimatedDuration": "预计时长"
+  }
+]
+
+注意：
+- 脚本要口语化，像在跟朋友聊天，不要书面语
+- 多用数字、对比、具体案例增加可信度
+- Hook 要让人不忍心划走
+- 三条脚本风格要有明显区别（比如一条揭秘型、一条教程型、一条故事型）`;
+
+  const response = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messages: [
+        { role: "system", content: "你是顶级短视频脚本写手，请直接返回 JSON 格式的脚本，不要包含 markdown 代码块标记。" },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.9,
+      max_tokens: 3000,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: "请求失败" }));
+    throw new Error(err.error || `脚本生成失败 (${response.status})`);
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content || "";
+
+  let scripts;
+  try {
+    scripts = JSON.parse(content);
+  } catch (e) {
+    const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (jsonMatch) {
+      scripts = JSON.parse(jsonMatch[1].trim());
+    } else {
+      const start = content.indexOf('[');
+      const end = content.lastIndexOf(']');
+      if (start !== -1 && end !== -1) {
+        scripts = JSON.parse(content.substring(start, end + 1));
+      } else {
+        throw new Error("无法解析 AI 返回的脚本");
+      }
+    }
+  }
+
+  onProgress("脚本生成完成 ✓");
+  return scripts;
+}
+
+// --------------------------------------------------------
+// API 模块：视频生成（通过后端代理调用 A2E 数字人）
+// --------------------------------------------------------
+async function generateA2EVideo(scriptText, onProgress) {
+  onProgress("正在生成数字人视频...");
+
+  // 后端会处理创建任务 + 轮询等待完成的全过程
+  const response = await fetch("/api/video", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text: scriptText,
+      voice: "zh-CN-XiaoxiaoNeural",
+      aspectRatio: "9:16",
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: "请求失败" }));
+    throw new Error(err.error || `视频生成失败 (${response.status})`);
+  }
+
+  const data = await response.json();
+  onProgress("数字人视频生成完成 ✓");
+  return data.url;
+}
+
+// --------------------------------------------------------
+// UI 组件
+// --------------------------------------------------------
+
+// 进度步骤条
+function ProgressSteps({ steps, currentStep }) {
+  return (
+    <div className="flex items-center justify-between w-full max-w-2xl mx-auto my-8">
+      {steps.map((step, i) => (
+        <React.Fragment key={i}>
+          <div className="flex flex-col items-center">
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300 ${
+              i < currentStep ? 'bg-green-500 text-white' :
+              i === currentStep ? 'bg-indigo-500 text-white pulse-glow' :
+              'bg-gray-700 text-gray-400'
+            }`}>
+              {i < currentStep ? '✓' : i + 1}
+            </div>
+            <span className={`text-xs mt-2 text-center max-w-[80px] ${
+              i <= currentStep ? 'text-white' : 'text-gray-500'
+            }`}>{step}</span>
+          </div>
+          {i < steps.length - 1 && (
+            <div className={`flex-1 h-0.5 mx-2 transition-all duration-300 ${
+              i < currentStep ? 'bg-green-500' : 'bg-gray-700'
+            }`} />
+          )}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+// 视频卡片
+function VideoCard({ video, index }) {
+  return (
+    <div className="bg-gray-800/50 rounded-xl p-4 card-hover border border-gray-700/50">
+      <div className="flex justify-between items-start mb-2">
+        <span className="text-tt-pink font-bold text-sm">#{index + 1}</span>
+        <span className="text-gray-400 text-xs">@{video.author}</span>
+      </div>
+      <p className="text-sm text-gray-300 mb-3 line-clamp-2">{video.desc}</p>
+      {video.transcript && (
+        <details className="mb-3">
+          <summary className="text-xs text-tt-cyan cursor-pointer hover:text-tt-cyan/80">
+            📝 查看口播内容
+          </summary>
+          <p className="text-xs text-gray-400 mt-2 leading-relaxed max-h-32 overflow-y-auto">
+            {video.transcript}
+          </p>
+        </details>
+      )}
+      <div className="grid grid-cols-4 gap-2 text-center">
+        <div>
+          <div className="text-white font-bold text-sm">{formatNumber(video.plays)}</div>
+          <div className="text-gray-500 text-xs">播放</div>
+        </div>
+        <div>
+          <div className="text-tt-pink font-bold text-sm">{formatNumber(video.likes)}</div>
+          <div className="text-gray-500 text-xs">点赞</div>
+        </div>
+        <div>
+          <div className="text-tt-cyan font-bold text-sm">{formatNumber(video.comments)}</div>
+          <div className="text-gray-500 text-xs">评论</div>
+        </div>
+        <div>
+          <div className="text-yellow-400 font-bold text-sm">{formatNumber(video.shares)}</div>
+          <div className="text-gray-500 text-xs">转发</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 分析报告展示
+function AnalysisReport({ analysis }) {
+  if (!analysis) return null;
+
+  return (
+    <div className="space-y-6">
+      {/* Hook 类型分析 */}
+      <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700/50">
+        <h3 className="text-lg font-bold text-tt-pink mb-4">🎣 Hook 类型分布</h3>
+        <div className="space-y-3">
+          {analysis.hookTypes?.map((hook, i) => (
+            <div key={i}>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-white">{hook.type}</span>
+                <span className="text-gray-400">{hook.percentage}%</span>
+              </div>
+              <div className="w-full bg-gray-700 rounded-full h-2">
+                <div className="bg-tt-pink rounded-full h-2 transition-all duration-500"
+                     style={{ width: `${hook.percentage}%` }} />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">例: "{hook.example}"</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 内容结构 */}
+      <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700/50">
+        <h3 className="text-lg font-bold text-tt-cyan mb-4">📐 内容结构</h3>
+        <div className="space-y-2">
+          <p className="text-sm"><span className="text-gray-400">平均时长：</span><span className="text-white">{analysis.contentStructure?.avgDuration}</span></p>
+          <p className="text-sm"><span className="text-gray-400">内容模式：</span><span className="text-white">{analysis.contentStructure?.pattern}</span></p>
+          <div className="flex flex-wrap gap-2 mt-2">
+            {analysis.contentStructure?.keyElements?.map((el, i) => (
+              <span key={i} className="px-3 py-1 bg-indigo-900/50 text-indigo-300 text-xs rounded-full">{el}</span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* 情绪触发 + 受众 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700/50">
+          <h3 className="text-lg font-bold text-yellow-400 mb-4">🎭 情绪触发点</h3>
+          <ul className="space-y-2">
+            {analysis.emotionalTriggers?.map((trigger, i) => (
+              <li key={i} className="text-sm text-gray-300 flex items-start">
+                <span className="text-yellow-400 mr-2">→</span>{trigger}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700/50">
+          <h3 className="text-lg font-bold text-green-400 mb-4">🎯 目标受众</h3>
+          <p className="text-sm text-gray-300">{analysis.targetAudience}</p>
+          <div className="flex flex-wrap gap-2 mt-3">
+            {analysis.commonHashtags?.map((tag, i) => (
+              <span key={i} className="px-2 py-1 bg-gray-700/50 text-tt-cyan text-xs rounded">{tag}</span>
+            ))}
+          </div>
+          <p className="text-xs text-gray-500 mt-3">⏰ 建议发布时间: {analysis.bestPostingTime}</p>
+        </div>
+      </div>
+
+      {/* 爆款因素 */}
+      <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700/50">
+        <h3 className="text-lg font-bold text-purple-400 mb-4">🚀 爆款因素</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {analysis.viralFactors?.map((factor, i) => (
+            <div key={i} className="flex items-start p-3 bg-purple-900/20 rounded-lg">
+              <span className="text-purple-400 font-bold mr-2">{i + 1}.</span>
+              <span className="text-sm text-gray-300">{factor}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 脚本卡片
+function ScriptCard({ script, onGenerate, isGenerating }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const fullScript = `${script.hook}\n\n${script.body}\n\n${script.cta}`;
+
+  return (
+    <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700/50 card-hover">
+      <div className="flex justify-between items-start mb-3">
+        <h4 className="text-white font-bold">脚本 {script.id}：{script.title}</h4>
+        <span className="text-xs text-gray-500 bg-gray-700/50 px-2 py-1 rounded">
+          ⏱ {script.estimatedDuration}
+        </span>
+      </div>
+
+      {/* Hook 高亮展示 */}
+      <div className="bg-tt-pink/10 border-l-4 border-tt-pink p-3 rounded-r mb-3">
+        <p className="text-xs text-tt-pink mb-1 font-bold">🎣 HOOK（开场白）</p>
+        <p className="text-sm text-white">{script.hook}</p>
+      </div>
+
+      {/* 正文 */}
+      <div className={`mb-3 ${expanded ? '' : 'max-h-24 overflow-hidden relative'}`}>
+        <p className="text-xs text-gray-500 mb-1 font-bold">📝 正文</p>
+        <p className="text-sm text-gray-300 leading-relaxed">{script.body}</p>
+        {!expanded && (
+          <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-gray-800/50 to-transparent" />
+        )}
+      </div>
+
+      {/* CTA */}
+      <div className="bg-green-900/20 border-l-4 border-green-500 p-3 rounded-r mb-3">
+        <p className="text-xs text-green-400 mb-1 font-bold">📢 CTA（行动号召）</p>
+        <p className="text-sm text-gray-300">{script.cta}</p>
+      </div>
+
+      {/* 表演提示 */}
+      <p className="text-xs text-gray-500 mb-4">🎬 表演提示: {script.style}</p>
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="text-xs text-indigo-400 hover:text-indigo-300 transition"
+        >
+          {expanded ? '收起' : '展开全文'}
+        </button>
+        <button
+          onClick={() => navigator.clipboard.writeText(fullScript)}
+          className="text-xs text-gray-400 hover:text-white transition ml-auto"
+        >
+          📋 复制脚本
+        </button>
+        {onGenerate && (
+          <button
+            onClick={() => onGenerate(fullScript)}
+            disabled={isGenerating}
+            className="text-xs bg-tt-pink hover:bg-tt-pink/80 text-white px-3 py-1 rounded-full transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isGenerating ? '生成中...' : '🎬 生成视频'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// TikTok 竖屏预览（图文预览模式）
+function PhonePreview({ script }) {
+  if (!script) return null;
+
+  return (
+    <div className="phone-frame bg-black mx-auto">
+      <div className="h-full flex flex-col justify-end p-4 bg-gradient-to-t from-black/80 via-black/20 to-transparent">
+        {/* 模拟的视频内容区域 */}
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-6xl mb-4">🎬</div>
+            <p className="text-xs text-gray-400">视频预览区域</p>
+          </div>
+        </div>
+
+        {/* 右侧操作栏 */}
+        <div className="absolute right-3 bottom-32 flex flex-col items-center gap-4">
+          <div className="text-center">
+            <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center text-xs">❤️</div>
+            <span className="text-xs text-white">12.8万</span>
+          </div>
+          <div className="text-center">
+            <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center text-xs">💬</div>
+            <span className="text-xs text-white">3456</span>
+          </div>
+          <div className="text-center">
+            <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center text-xs">↗️</div>
+            <span className="text-xs text-white">分享</span>
+          </div>
+        </div>
+
+        {/* 底部文案区 */}
+        <div className="mb-2">
+          <p className="text-white text-xs font-bold mb-1">@你的账号</p>
+          <p className="text-white text-xs leading-relaxed line-clamp-3">{script.hook}</p>
+          <div className="flex gap-1 mt-1 flex-wrap">
+            <span className="text-tt-cyan text-xs">#话题标签</span>
+            <span className="text-tt-cyan text-xs">#爆款</span>
+          </div>
+        </div>
+
+        {/* 底部音乐条 */}
+        <div className="flex items-center gap-2 py-1">
+          <span className="text-white text-xs">🎵 原创音乐 - 你的账号</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// API Key 设置面板
+function SettingsPanel({ isDemo, setIsDemo, serverStatus }) {
+  return (
+    <div className="mb-6">
+      <div className="flex items-center gap-4 mb-4">
+        {/* 演示模式开关 */}
+        <label className="flex items-center gap-2 cursor-pointer">
+          <div className={`relative w-12 h-6 rounded-full transition-colors ${isDemo ? 'bg-green-500' : 'bg-gray-600'}`}
+               onClick={() => setIsDemo(!isDemo)}>
+            <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform ${isDemo ? 'translate-x-6' : 'translate-x-0.5'}`} />
+          </div>
+          <span className="text-sm text-gray-300">
+            {isDemo ? '🎮 演示模式（使用假数据）' : '🔑 真实模式（API Key 在服务器 .env 中）'}
+          </span>
+        </label>
+      </div>
+
+      {!isDemo && serverStatus && (
+        <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+          <p className="text-xs text-gray-400 mb-2">🔒 API Key 安全存储在服务器端 .env 文件中</p>
+          <div className="flex flex-wrap gap-3">
+            <span className={`text-xs px-2 py-1 rounded ${serverStatus.apify ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
+              Apify {serverStatus.apify ? '✅' : '❌'}
+            </span>
+            <span className={`text-xs px-2 py-1 rounded ${serverStatus.groq ? 'bg-green-900/50 text-green-400' : 'bg-yellow-900/50 text-yellow-400'}`}>
+              Groq {serverStatus.groq ? '✅' : '⚠️ 可选'}
+            </span>
+            <span className={`text-xs px-2 py-1 rounded ${serverStatus.deepseek ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
+              DeepSeek {serverStatus.deepseek ? '✅' : '❌'}
+            </span>
+            <span className={`text-xs px-2 py-1 rounded ${serverStatus.a2e ? 'bg-green-900/50 text-green-400' : 'bg-yellow-900/50 text-yellow-400'}`}>
+              A2E {serverStatus.a2e ? '✅' : '⚠️ 可选'}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --------------------------------------------------------
+// 主应用组件
+// --------------------------------------------------------
+function App() {
+  // 状态管理
+  const [keyword, setKeyword] = useState("");
+  const [isDemo, setIsDemo] = useState(true); // 默认演示模式
+  const [serverStatus, setServerStatus] = useState(null); // 服务器 API Key 配置状态
+
+  // 页面加载时检查服务器状态（看看哪些 API Key 已配置）
+  useEffect(() => {
+    fetch("/api/health")
+      .then(r => r.json())
+      .then(data => setServerStatus(data.keys))
+      .catch(() => setServerStatus(null));
+  }, []);
+
+  // 流水线状态
+  const [isRunning, setIsRunning] = useState(false);
+  const [currentStep, setCurrentStep] = useState(-1); // -1 表示未开始
+  const [statusMsg, setStatusMsg] = useState("");
+  const [error, setError] = useState("");
+
+  // 各模块输出数据
+  const [videos, setVideos] = useState(null);
+  const [analysis, setAnalysis] = useState(null);
+  const [scripts, setScripts] = useState(null);
+  const [generatingVideo, setGeneratingVideo] = useState(false);
+  const [generatedVideoUrl, setGeneratedVideoUrl] = useState("");
+  const [previewScript, setPreviewScript] = useState(null);
+
+  // 当前展示的 Tab
+  const [activeTab, setActiveTab] = useState("videos"); // videos | analysis | scripts | video
+
+  const steps = ["抓取数据", "语音转录", "AI 分析", "生成脚本", "视频生成"];
+
+  // 运行完整流水线
+  const runPipeline = async () => {
+    if (!keyword.trim()) {
+      setError("请输入关键词");
+      return;
+    }
+
+    // 真实模式下检查服务器 API Key 状态
+    if (!isDemo) {
+      if (!serverStatus?.apify) { setError("服务器未配置 APIFY_TOKEN，请检查 .env 文件"); return; }
+      if (!serverStatus?.deepseek) { setError("服务器未配置 DEEPSEEK_API_KEY，请检查 .env 文件"); return; }
+    }
+
+    setIsRunning(true);
+    setError("");
+    setCurrentStep(0);
+    setVideos(null);
+    setAnalysis(null);
+    setScripts(null);
+    setGeneratedVideoUrl("");
+    setPreviewScript(null);
+    setActiveTab("videos");
+
+    try {
+      // ===== Step 1: 数据获取 =====
+      setStatusMsg("正在获取 TikTok 热门视频...");
+      let videoData;
+
+      if (isDemo) {
+        // 演示模式：使用 mock 数据
+        await delay(1500);
+        videoData = MOCK_VIDEOS;
+        setStatusMsg(`演示模式：加载了 ${videoData.length} 个示例视频`);
+      } else {
+        // 真实模式：通过后端代理调用 Apify
+        videoData = await fetchTikTokVideos(keyword, setStatusMsg);
+      }
+
+      setVideos(videoData);
+      setCurrentStep(1);
+
+      // ===== Step 2: 语音转录 =====
+      setStatusMsg("正在转录视频口播内容...");
+
+      if (isDemo) {
+        // 演示模式：mock 数据已包含 transcript
+        await delay(2000);
+        setStatusMsg("演示模式：口播内容已就绪");
+      } else if (serverStatus?.groq) {
+        // 服务器配置了 Groq Key 才转录
+        videoData = await transcribeVideos(videoData, 5, setStatusMsg);
+        setVideos(videoData);
+      } else {
+        setStatusMsg("服务器未配置 GROQ_API_KEY，跳过转录步骤");
+        await delay(500);
+      }
+
+      setCurrentStep(2);
+
+      // ===== Step 3: 爆款分析 =====
+      setStatusMsg("AI 正在分析爆款规律...");
+      let analysisData;
+
+      if (isDemo) {
+        await delay(2000);
+        analysisData = MOCK_ANALYSIS;
+        setStatusMsg("演示模式：分析报告已就绪");
+      } else {
+        analysisData = await analyzeVideos(videoData, setStatusMsg);
+      }
+
+      setAnalysis(analysisData);
+      setActiveTab("analysis");
+      setCurrentStep(3);
+
+      // ===== Step 4: 脚本生成 =====
+      setStatusMsg("正在生成脚本...");
+      let scriptsData;
+
+      if (isDemo) {
+        await delay(1500);
+        scriptsData = MOCK_SCRIPTS;
+        setStatusMsg("演示模式：3 条脚本已就绪");
+      } else {
+        scriptsData = await generateScripts(analysisData, keyword, setStatusMsg);
+      }
+
+      setScripts(scriptsData);
+      setActiveTab("scripts");
+      setCurrentStep(4);
+      setStatusMsg("流水线完成！🎉");
+
+    } catch (err) {
+      setError(err.message);
+      setStatusMsg("流水线出错，请查看错误信息");
+      console.error("Pipeline error:", err);
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  // 生成视频（A2E 或预览）
+  const handleGenerateVideo = async (scriptText) => {
+    setActiveTab("video");
+    setPreviewScript(scripts?.find(s => `${s.hook}\n\n${s.body}\n\n${s.cta}` === scriptText) || scripts?.[0]);
+
+    if (isDemo || !serverStatus?.a2e) {
+      // 预览模式
+      setGeneratedVideoUrl("");
+      return;
+    }
+
+    // 真实 A2E 调用（通过后端代理）
+    setGeneratingVideo(true);
+    try {
+      const url = await generateA2EVideo(scriptText, setStatusMsg);
+      setGeneratedVideoUrl(url);
+    } catch (err) {
+      setError("视频生成失败: " + err.message);
+    } finally {
+      setGeneratingVideo(false);
+    }
+  };
+
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-8">
+      {/* Header */}
+      <header className="text-center mb-8">
+        <h1 className="text-4xl font-bold mb-2">
+          <span className="text-tt-cyan">TikTok</span>
+          <span className="text-white"> 爆款内容引擎</span>
+        </h1>
+        <p className="text-gray-400 text-sm">关键词 → 抓取爆款 → AI 分析 → 生成脚本 → 数字人视频</p>
+      </header>
+
+      {/* 设置面板 */}
+      <SettingsPanel isDemo={isDemo} setIsDemo={setIsDemo} serverStatus={serverStatus} />
+
+      {/* 搜索框 */}
+      <div className="flex gap-3 mb-6">
+        <input
+          type="text"
+          value={keyword}
+          onChange={e => setKeyword(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && !isRunning && runPipeline()}
+          placeholder="输入关键词，如：眼镜、护肤、健身..."
+          className="flex-1 bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+          disabled={isRunning}
+        />
+        <button
+          onClick={runPipeline}
+          disabled={isRunning}
+          className="bg-tt-pink hover:bg-tt-pink/80 text-white px-6 py-3 rounded-xl font-bold transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+        >
+          {isRunning ? '⏳ 运行中...' : '🚀 开始分析'}
+        </button>
+      </div>
+
+      {/* 错误提示 */}
+      {error && (
+        <div className="bg-red-900/30 border border-red-700 text-red-300 px-4 py-3 rounded-xl mb-6 text-sm">
+          ❌ {error}
+          <button onClick={() => setError("")} className="float-right text-red-400 hover:text-red-200">✕</button>
+        </div>
+      )}
+
+      {/* 进度条 */}
+      {currentStep >= 0 && (
+        <div>
+          <ProgressSteps steps={steps} currentStep={currentStep} />
+          {statusMsg && (
+            <p className="text-center text-sm text-gray-400 mb-6">{statusMsg}</p>
+          )}
+        </div>
+      )}
+
+      {/* Tab 切换 */}
+      {(videos || analysis || scripts) && (
+        <div className="flex gap-1 mb-6 bg-gray-800/30 p-1 rounded-xl">
+          {[
+            { key: "videos", label: "📊 爆款视频", show: !!videos },
+            { key: "analysis", label: "🧠 分析报告", show: !!analysis },
+            { key: "scripts", label: "📝 生成脚本", show: !!scripts },
+            { key: "video", label: "🎬 视频预览", show: !!previewScript },
+          ].filter(t => t.show).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition ${
+                activeTab === tab.key
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* 内容区域 */}
+      <div className="min-h-[400px]">
+        {/* 视频列表 */}
+        {activeTab === "videos" && videos && (
+          <div>
+            <h2 className="text-xl font-bold mb-4">
+              📊 热门视频 <span className="text-sm text-gray-400 font-normal">（共 {videos.length} 个，按播放量排序）</span>
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {videos.map((video, i) => (
+                <VideoCard key={video.id} video={video} index={i} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 分析报告 */}
+        {activeTab === "analysis" && analysis && (
+          <div>
+            <h2 className="text-xl font-bold mb-4">🧠 爆款分析报告</h2>
+            <AnalysisReport analysis={analysis} />
+          </div>
+        )}
+
+        {/* 脚本展示 */}
+        {activeTab === "scripts" && scripts && (
+          <div>
+            <h2 className="text-xl font-bold mb-4">📝 生成的脚本</h2>
+            <div className="space-y-4">
+              {scripts.map(script => (
+                <ScriptCard
+                  key={script.id}
+                  script={script}
+                  onGenerate={handleGenerateVideo}
+                  isGenerating={generatingVideo}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 视频预览 */}
+        {activeTab === "video" && previewScript && (
+          <div>
+            <h2 className="text-xl font-bold mb-4">🎬 视频预览</h2>
+            <div className="flex flex-col md:flex-row gap-8 items-start justify-center">
+              <PhonePreview script={previewScript} />
+              <div className="flex-1 max-w-md">
+                <h3 className="text-white font-bold mb-2">{previewScript.title}</h3>
+                <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50 space-y-3">
+                  <div>
+                    <p className="text-xs text-tt-pink font-bold mb-1">🎣 Hook</p>
+                    <p className="text-sm text-gray-300">{previewScript.hook}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400 font-bold mb-1">📝 正文</p>
+                    <p className="text-sm text-gray-300 leading-relaxed">{previewScript.body}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-green-400 font-bold mb-1">📢 CTA</p>
+                    <p className="text-sm text-gray-300">{previewScript.cta}</p>
+                  </div>
+                </div>
+                {generatedVideoUrl && (
+                  <div className="mt-4">
+                    <a href={generatedVideoUrl} target="_blank" rel="noopener noreferrer"
+                       className="inline-block bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-sm transition">
+                      ⬇️ 下载数字人视频
+                    </a>
+                  </div>
+                )}
+                {!generatedVideoUrl && !isDemo && serverStatus?.a2e && (
+                  <p className="text-xs text-gray-500 mt-3">💡 点击脚本卡片上的"生成视频"按钮，使用 A2E 数字人生成真实视频</p>
+                )}
+                {(isDemo || !serverStatus?.a2e) && (
+                  <p className="text-xs text-gray-500 mt-3">💡 当前为图文预览模式。配置 A2E API Key 后可生成数字人视频</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 空状态 */}
+        {currentStep < 0 && (
+          <div className="text-center py-20">
+            <div className="text-6xl mb-4">🎯</div>
+            <p className="text-gray-400 text-lg mb-2">输入关键词，开始分析 TikTok 爆款</p>
+            <p className="text-gray-500 text-sm">默认为演示模式，无需 API Key 即可体验完整流程</p>
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <footer className="text-center text-gray-600 text-xs mt-12 py-4 border-t border-gray-800">
+        TikTok 爆款内容引擎 — Demo Version | 数据来源: Apify | AI: DeepSeek | 转录: Groq Whisper
+      </footer>
+    </div>
+  );
+}
+
+// 渲染应用
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
