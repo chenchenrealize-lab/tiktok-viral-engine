@@ -17,8 +17,8 @@ const PORT = process.env.PORT || 3000;
 // 中间件：解析 JSON 请求体
 app.use(express.json());
 
-// 中间件：把当前目录的文件当作网页提供（这样 index.html 就能通过 localhost:3000 访问）
-app.use(express.static("."));
+// 中间件：只把 public 文件夹的内容当作网页提供（保护服务器代码不被访问）
+app.use(express.static("public"));
 
 // 工具函数：延时
 function delay(ms) {
